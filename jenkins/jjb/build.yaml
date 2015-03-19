@@ -1,0 +1,17 @@
+- project:
+    name: jenkins-job-builder
+    jobs:
+      - jenkins-jobs-update
+
+- job:
+    name: jenkins-jobs-update
+    node: master
+    description: |
+      Rebuild all of the jenkins job definitions.
+    scm:
+      - git:
+          url: https://github.com/dreamhost/akanda-ci.git
+          branches:
+            - origin/master
+    builders:
+      - shell: "jenkins-jobs update jenkins/jjb"
