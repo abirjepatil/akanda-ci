@@ -1,0 +1,56 @@
+- hosts: all
+  connection: local
+  tasks:
+    - name: wait for server to rebuild
+      wait_for: host={{ inventory_hostname }} port=22 delay=15 timeout=60
+
+- hosts: all
+  vars:
+      logfile: '/opt/stack/logs/stack.sh.log'
+      branch: 'master'
+
+  tasks:
+
+    - name: install git
+      sudo: yes
+      apt: name=git state=present
+
+    - name: clone upstream devstack
+      git: repo=https://github.com/openstack-dev/devstack.git version="{{ branch }}" dest="~/devstack" accept_hostkey=yes
+
+    - name: clone akanda-devstack repo
+      git: repo=https://github.com/dreamhost/akanda-devstack.git version="{{ branch }}" dest="~/akanda-devstack" accept_hostkey=yes
+
+    - name: create a localrc
+      template: src=templates/devstack-local.conf dest="~/devstack/local.conf"
+
+    - name: install devstack plugin
+      file: src="~/akanda-devstack/akanda" dest="~/devstack/lib/akanda" state=link
+      when: branch == 'stable/juno'
+
+    - file: src="~/akanda-devstack/20-akanda.sh" dest="~/devstack/extras.d/20-akanda.sh" state=link
+      when: branch == 'stable/juno'
+
+    - file: src="~/akanda-devstack/patches" dest="~/devstack/patches" state=link
+      when: branch == 'stable/juno'
+
+    - name: start stack.sh in a screen
+      shell: "screen -S devstack -d -m sh -c 'LOGFILE={{ logfile }} ~/devstack/stack.sh'"
+
+    - name: wait for stack.sh to start
+      shell: sleep 3
+
+    - name: watch stack.sh stdout
+      shell: "tail -n1 {{ logfile }} && screen -list | grep -q devstack"
+      register: finished
+      until: finished.rc == 1
+      delay: 1
+      retries: 6000
+      ignore_errors: true
+
+    - name: ensure that stack.sh finished
+      shell: 'grep "This is your host ip" {{ logfile }}'
+      register: stackresult
+
+    - fail: msg="stack.sh did not complete"
+      when: stackresult.rc == 1
